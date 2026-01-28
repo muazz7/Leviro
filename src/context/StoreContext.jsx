@@ -4,32 +4,7 @@ import { supabase } from '../lib/supabase';
 const StoreContext = createContext();
 
 // Fallback products if Supabase is not configured
-const fallbackProducts = [
-    {
-        id: '1',
-        name: 'Premium White Cotton Panjabi',
-        price: 2850,
-        description: 'Crafted from the finest Egyptian cotton, this premium white Panjabi features intricate embroidery on the collar and cuffs. Perfect for weddings, Eid, and special occasions.',
-        image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&q=80',
-        sizes: ['S', 'M', 'L', 'XL', 'XXL'],
-    },
-    {
-        id: '2',
-        name: 'Royal Navy Blue Silk Panjabi',
-        price: 4250,
-        description: 'A stunning navy blue Panjabi made from premium Indian silk. Features elegant gold thread work on the chest and collar. Ideal for formal events and celebrations.',
-        image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&q=80',
-        sizes: ['S', 'M', 'L', 'XL'],
-    },
-    {
-        id: '3',
-        name: 'Classic Cream Linen Panjabi',
-        price: 3150,
-        description: 'A timeless cream-colored Panjabi crafted from breathable linen. Minimalist design with subtle texture, perfect for both casual and semi-formal occasions.',
-        image: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=800&q=80',
-        sizes: ['M', 'L', 'XL', 'XXL'],
-    },
-];
+const fallbackProducts = [];
 
 export function StoreProvider({ children }) {
     const [products, setProducts] = useState([]);
@@ -53,16 +28,19 @@ export function StoreProvider({ children }) {
 
             if (error) throw error;
 
+            // Connection successful - set this BEFORE checking data length
+            setIsSupabaseConnected(true);
+
             if (data && data.length > 0) {
                 setProducts(data);
-                setIsSupabaseConnected(true);
             } else {
-                // Use fallback products
-                setProducts(fallbackProducts);
+                // Empty database, start with empty products array
+                setProducts([]);
             }
         } catch (error) {
             console.warn('Supabase not configured, using fallback products:', error.message);
             setProducts(fallbackProducts);
+            setIsSupabaseConnected(false);
         }
     }, []);
 
@@ -276,24 +254,35 @@ export function StoreProvider({ children }) {
             showToast('Product added successfully');
         } catch (error) {
             console.error('Error adding product:', error);
-            showToast('Error adding product', 'error');
+            // Show the actual error message for debugging
+            const errorMsg = error?.message || 'Unknown error';
+            showToast(`Error adding product: ${errorMsg}`, 'error');
         }
     };
 
     const deleteProduct = async (productId) => {
         try {
             if (isSupabaseConnected) {
+                // Call Supabase DELETE and wait for confirmation
                 const { error } = await supabase
                     .from('products')
                     .delete()
                     .eq('id', productId);
+
                 if (error) throw error;
+
+                // Only update local state AFTER Supabase confirms deletion
+                setProducts(products.filter(p => p.id !== productId));
+                showToast('Product deleted');
+            } else {
+                // Fallback for local-only mode
+                setProducts(products.filter(p => p.id !== productId));
+                showToast('Product deleted (local only)');
             }
-            setProducts(products.filter(p => p.id !== productId));
-            showToast('Product deleted');
         } catch (error) {
             console.error('Error deleting product:', error);
             showToast('Error deleting product', 'error');
+            // Product remains in UI since deletion failed
         }
     };
 
