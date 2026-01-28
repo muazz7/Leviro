@@ -286,6 +286,45 @@ export function StoreProvider({ children }) {
         }
     };
 
+    // Update existing product
+    const updateProduct = async (productId, updatedData) => {
+        try {
+            if (isSupabaseConnected) {
+                const { data, error } = await supabase
+                    .from('products')
+                    .update({
+                        name: updatedData.name,
+                        price: updatedData.price,
+                        description: updatedData.description,
+                        image: updatedData.image,
+                        sizes: updatedData.sizes,
+                    })
+                    .eq('id', productId)
+                    .select()
+                    .single();
+
+                if (error) throw error;
+
+                // Update local state with the returned data
+                setProducts(products.map(p => p.id === productId ? data : p));
+                showToast('Product updated successfully');
+                return true;
+            } else {
+                // Fallback for local-only mode
+                setProducts(products.map(p =>
+                    p.id === productId ? { ...p, ...updatedData } : p
+                ));
+                showToast('Product updated (local only)');
+                return true;
+            }
+        } catch (error) {
+            console.error('Error updating product:', error);
+            const errorMsg = error?.message || 'Unknown error';
+            showToast(`Error updating product: ${errorMsg}`, 'error');
+            return false;
+        }
+    };
+
     // Refresh data function for admin
     const refreshData = async () => {
         await Promise.all([fetchProducts(), fetchOrders()]);
@@ -310,6 +349,7 @@ export function StoreProvider({ children }) {
                 placeOrder,
                 updateOrderStatus,
                 addProduct,
+                updateProduct,
                 deleteProduct,
                 refreshData,
             }}

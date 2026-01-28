@@ -1,23 +1,27 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LogOut, Package, ShoppingBag, Settings, Check, RefreshCw, Cloud, CloudOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { supabase } from '../lib/supabase';
 import OrdersTable from '../components/admin/OrdersTable';
 import ProductForm from '../components/admin/ProductForm';
 import ProductList from '../components/admin/ProductList';
 
-// Default credentials
+// Default credentials (only used if Supabase has no settings)
 const DEFAULT_CREDENTIALS = { username: 'admin', password: '1234' };
 
-export default function Admin({ onLogout }) {
+export default function Admin() {
+    const navigate = useNavigate();
     const { refreshData, isSupabaseConnected, loading } = useStore();
 
-    // Load credentials from localStorage or use defaults
-    const [credentials, setCredentials] = useState(() => {
-        const saved = localStorage.getItem('leviro_admin_credentials');
-        return saved ? JSON.parse(saved) : DEFAULT_CREDENTIALS;
-    });
+    // Credentials state - fetched from Supabase
+    const [credentials, setCredentials] = useState(DEFAULT_CREDENTIALS);
+    const [credentialsLoading, setCredentialsLoading] = useState(true);
 
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    // Check sessionStorage for persistent login
+    const [isLoggedIn, setIsLoggedIn] = useState(() => {
+        return sessionStorage.getItem('leviro_admin_logged_in') === 'true';
+    });
     const [activeTab, setActiveTab] = useState('orders');
     const [loginForm, setLoginForm] = useState({ username: '', password: '' });
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -33,16 +37,44 @@ export default function Admin({ onLogout }) {
     });
     const [settingsError, setSettingsError] = useState('');
     const [settingsSuccess, setSettingsSuccess] = useState('');
+    const [settingsUpdating, setSettingsUpdating] = useState(false);
 
-    // Persist credentials to localStorage
+    // Fetch credentials from Supabase on mount
     useEffect(() => {
-        localStorage.setItem('leviro_admin_credentials', JSON.stringify(credentials));
-    }, [credentials]);
+        const fetchCredentials = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('admin_settings')
+                    .select('*')
+                    .eq('id', 'admin_credentials')
+                    .single();
+
+                if (error && error.code !== 'PGRST116') {
+                    // PGRST116 = no rows found, which is fine for first time
+                    console.error('Error fetching credentials:', error);
+                }
+
+                if (data) {
+                    setCredentials({
+                        username: data.username,
+                        password: data.password
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching credentials:', error);
+            } finally {
+                setCredentialsLoading(false);
+            }
+        };
+
+        fetchCredentials();
+    }, []);
 
     const handleLogin = (e) => {
         e.preventDefault();
         if (loginForm.username === credentials.username && loginForm.password === credentials.password) {
             setIsLoggedIn(true);
+            sessionStorage.setItem('leviro_admin_logged_in', 'true');
             setLoginError('');
         } else {
             setLoginError('Invalid credentials');
@@ -51,8 +83,9 @@ export default function Admin({ onLogout }) {
 
     const handleLogout = () => {
         setIsLoggedIn(false);
+        sessionStorage.removeItem('leviro_admin_logged_in');
         setLoginForm({ username: '', password: '' });
-        if (onLogout) onLogout();
+        navigate('/');
     };
 
     const handleSettingsChange = (e) => {
@@ -62,7 +95,7 @@ export default function Admin({ onLogout }) {
         setSettingsSuccess('');
     };
 
-    const handleCredentialsUpdate = (e) => {
+    const handleCredentialsUpdate = async (e) => {
         e.preventDefault();
         setSettingsError('');
         setSettingsSuccess('');
@@ -95,22 +128,43 @@ export default function Admin({ onLogout }) {
             return;
         }
 
-        // Update credentials
-        setCredentials({
-            username: settingsForm.newUsername.trim(),
-            password: settingsForm.newPassword,
-        });
+        setSettingsUpdating(true);
 
-        // Reset form
-        setSettingsForm({
-            currentUsername: '',
-            currentPassword: '',
-            newUsername: '',
-            newPassword: '',
-            confirmPassword: '',
-        });
+        try {
+            // Update in Supabase using upsert
+            const { error } = await supabase
+                .from('admin_settings')
+                .upsert({
+                    id: 'admin_credentials',
+                    username: settingsForm.newUsername.trim(),
+                    password: settingsForm.newPassword,
+                    updated_at: new Date().toISOString()
+                });
 
-        setSettingsSuccess('Credentials updated successfully!');
+            if (error) throw error;
+
+            // Update local state
+            setCredentials({
+                username: settingsForm.newUsername.trim(),
+                password: settingsForm.newPassword,
+            });
+
+            // Reset form
+            setSettingsForm({
+                currentUsername: '',
+                currentPassword: '',
+                newUsername: '',
+                newPassword: '',
+                confirmPassword: '',
+            });
+
+            setSettingsSuccess('Credentials updated successfully!');
+        } catch (error) {
+            console.error('Error updating credentials:', error);
+            setSettingsError('Failed to update credentials. Please try again.');
+        } finally {
+            setSettingsUpdating(false);
+        }
     };
 
     // Login Screen
@@ -387,15 +441,12 @@ export default function Admin({ onLogout }) {
                             {/* Submit Button */}
                             <button
                                 type="submit"
-                                className="w-full bg-black text-white py-3 font-medium text-sm hover:bg-gray-900 transition-colors"
+                                disabled={settingsUpdating}
+                                className="w-full bg-black text-white py-3 font-medium text-sm hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Update Credentials
+                                {settingsUpdating ? 'Updating...' : 'Update Credentials'}
                             </button>
                         </form>
-
-                        <p className="text-gray-400 text-xs mt-6">
-                            Note: Credentials are stored locally in your browser.
-                        </p>
                     </div>
                 )}
             </main>

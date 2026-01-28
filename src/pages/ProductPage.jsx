@@ -6,7 +6,7 @@ import CartDrawer from '../components/CartDrawer';
 import Checkout from '../components/Checkout';
 import Footer from '../components/Footer';
 
-export default function ProductPage({ onAdminClick }) {
+export default function ProductPage() {
     const { productId } = useParams();
     const navigate = useNavigate();
     const { products, addToCart, getCartCount } = useStore();
@@ -94,12 +94,12 @@ export default function ProductPage({ onAdminClick }) {
 
                         {/* Right side */}
                         <div className="flex items-center gap-4">
-                            <button
-                                onClick={onAdminClick}
+                            <Link
+                                to="/admin"
                                 className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                             >
                                 Admin
-                            </button>
+                            </Link>
                             <button
                                 onClick={() => setIsCartOpen(true)}
                                 className="relative p-2 hover:bg-gray-50 rounded-full transition-colors"
@@ -167,10 +167,10 @@ export default function ProductPage({ onAdminClick }) {
                                                 key={size}
                                                 onClick={() => handleSizeSelect(size)}
                                                 className={`min-w-[56px] px-5 py-3.5 border text-sm font-medium transition-all rounded-lg ${selectedSize === size
-                                                        ? 'border-black bg-black text-white'
-                                                        : sizeError
-                                                            ? 'border-red-300 hover:border-black'
-                                                            : 'border-gray-200 hover:border-black'
+                                                    ? 'border-black bg-black text-white'
+                                                    : sizeError
+                                                        ? 'border-red-300 hover:border-black'
+                                                        : 'border-gray-200 hover:border-black'
                                                     }`}
                                             >
                                                 {size}
@@ -185,8 +185,8 @@ export default function ProductPage({ onAdminClick }) {
                                 onClick={handleAddToCart}
                                 disabled={addedToCart}
                                 className={`w-full py-4 font-medium text-sm tracking-wide transition-all flex items-center justify-center gap-2 ${addedToCart
-                                        ? 'bg-green-600 text-white'
-                                        : 'bg-black text-white hover:bg-gray-800'
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-black text-white hover:bg-gray-800'
                                     }`}
                             >
                                 {addedToCart ? (

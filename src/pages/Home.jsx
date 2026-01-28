@@ -7,7 +7,7 @@ import CartDrawer from '../components/CartDrawer';
 import Checkout from '../components/Checkout';
 import Footer from '../components/Footer';
 
-export default function Home({ onAdminClick }) {
+export default function Home() {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isCheckout, setIsCheckout] = useState(false);
     const [orderSuccess, setOrderSuccess] = useState(false);
@@ -55,7 +55,6 @@ export default function Home({ onAdminClick }) {
         <div className="min-h-screen bg-white">
             <Header
                 onCartClick={handleCartClick}
-                onAdminClick={onAdminClick}
             />
 
             <main>

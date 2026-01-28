@@ -1,7 +1,8 @@
+import { Link } from 'react-router-dom';
 import { ShoppingBag } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 
-export default function Header({ onCartClick, onAdminClick }) {
+export default function Header({ onCartClick }) {
     const { getCartCount } = useStore();
     const cartCount = getCartCount();
 
@@ -19,12 +20,12 @@ export default function Header({ onCartClick, onAdminClick }) {
                     {/* Right side */}
                     <div className="flex items-center gap-4">
                         {/* Hidden admin link */}
-                        <button
-                            onClick={onAdminClick}
+                        <Link
+                            to="/admin"
                             className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                         >
                             Admin
-                        </button>
+                        </Link>
 
                         {/* Cart Button */}
                         <button
