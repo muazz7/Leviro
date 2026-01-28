@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
 
 const StoreContext = createContext();
 
-// Initial sample products
-const initialProducts = [
+// Fallback products if Supabase is not configured
+const fallbackProducts = [
     {
         id: '1',
         name: 'Premium White Cotton Panjabi',
@@ -31,36 +32,92 @@ const initialProducts = [
 ];
 
 export function StoreProvider({ children }) {
-    // Initialize state from localStorage or defaults
-    const [products, setProducts] = useState(() => {
-        const saved = localStorage.getItem('leviro_products');
-        return saved ? JSON.parse(saved) : initialProducts;
-    });
-
+    const [products, setProducts] = useState([]);
+    const [orders, setOrders] = useState([]);
     const [cart, setCart] = useState(() => {
+        // Cart still uses localStorage for user session
         const saved = localStorage.getItem('leviro_cart');
         return saved ? JSON.parse(saved) : [];
     });
-
-    const [orders, setOrders] = useState(() => {
-        const saved = localStorage.getItem('leviro_orders');
-        return saved ? JSON.parse(saved) : [];
-    });
-
     const [toasts, setToasts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
 
-    // Persist to localStorage
+    // Fetch products from Supabase
+    const fetchProducts = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                setProducts(data);
+                setIsSupabaseConnected(true);
+            } else {
+                // Use fallback products
+                setProducts(fallbackProducts);
+            }
+        } catch (error) {
+            console.warn('Supabase not configured, using fallback products:', error.message);
+            setProducts(fallbackProducts);
+        }
+    }, []);
+
+    // Fetch orders from Supabase
+    const fetchOrders = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (data) {
+                // Transform data to match expected format
+                const transformedOrders = data.map(order => ({
+                    id: order.id,
+                    customer: {
+                        name: order.customer_name,
+                        mobile: order.customer_mobile,
+                        district: order.customer_district,
+                        thana: order.customer_thana,
+                        address: order.customer_address,
+                        paymentMethod: order.payment_method,
+                    },
+                    items: order.items,
+                    total: order.total,
+                    status: order.status,
+                    createdAt: order.created_at,
+                }));
+                setOrders(transformedOrders);
+                setIsSupabaseConnected(true);
+            }
+        } catch (error) {
+            console.warn('Could not fetch orders:', error.message);
+            // Use localStorage fallback for orders
+            const saved = localStorage.getItem('leviro_orders');
+            if (saved) setOrders(JSON.parse(saved));
+        }
+    }, []);
+
+    // Initial data fetch
     useEffect(() => {
-        localStorage.setItem('leviro_products', JSON.stringify(products));
-    }, [products]);
+        const loadData = async () => {
+            setLoading(true);
+            await Promise.all([fetchProducts(), fetchOrders()]);
+            setLoading(false);
+        };
+        loadData();
+    }, [fetchProducts, fetchOrders]);
 
+    // Persist cart to localStorage
     useEffect(() => {
         localStorage.setItem('leviro_cart', JSON.stringify(cart));
     }, [cart]);
-
-    useEffect(() => {
-        localStorage.setItem('leviro_orders', JSON.stringify(orders));
-    }, [orders]);
 
     // Toast functions
     const showToast = (message, type = 'success') => {
@@ -125,40 +182,124 @@ export function StoreProvider({ children }) {
     };
 
     // Order functions
-    const placeOrder = (customerInfo) => {
-        const order = {
-            id: `ORD-${Date.now().toString().slice(-6)}`,
-            customer: customerInfo,
-            items: [...cart],
+    const placeOrder = async (customerInfo) => {
+        const orderId = `ORD-${Date.now().toString().slice(-6)}`;
+
+        const orderData = {
+            id: orderId,
+            customer_name: customerInfo.name,
+            customer_mobile: customerInfo.mobile,
+            customer_district: customerInfo.district,
+            customer_thana: customerInfo.thana,
+            customer_address: customerInfo.address,
+            payment_method: customerInfo.paymentMethod || 'cod',
+            items: cart,
             total: getCartTotal(),
             status: 'Pending',
-            createdAt: new Date().toISOString(),
         };
-        setOrders([order, ...orders]);
-        clearCart();
-        showToast('Order placed successfully! We will contact you shortly.');
-        return order;
+
+        try {
+            if (isSupabaseConnected) {
+                const { error } = await supabase.from('orders').insert([orderData]);
+                if (error) throw error;
+            } else {
+                // Fallback to localStorage
+                const saved = localStorage.getItem('leviro_orders');
+                const localOrders = saved ? JSON.parse(saved) : [];
+                localOrders.unshift({
+                    id: orderId,
+                    customer: customerInfo,
+                    items: [...cart],
+                    total: getCartTotal(),
+                    status: 'Pending',
+                    createdAt: new Date().toISOString(),
+                });
+                localStorage.setItem('leviro_orders', JSON.stringify(localOrders));
+            }
+
+            // Refresh orders
+            await fetchOrders();
+            clearCart();
+            showToast('Order placed successfully! We will contact you shortly.');
+            return { id: orderId };
+        } catch (error) {
+            console.error('Error placing order:', error);
+            showToast('Error placing order. Please try again.', 'error');
+            return null;
+        }
     };
 
-    const updateOrderStatus = (orderId, status) => {
-        setOrders(orders.map(order =>
-            order.id === orderId ? { ...order, status } : order
-        ));
+    const updateOrderStatus = async (orderId, status) => {
+        try {
+            if (isSupabaseConnected) {
+                const { error } = await supabase
+                    .from('orders')
+                    .update({ status })
+                    .eq('id', orderId);
+                if (error) throw error;
+            }
+
+            // Update local state
+            setOrders(orders.map(order =>
+                order.id === orderId ? { ...order, status } : order
+            ));
+        } catch (error) {
+            console.error('Error updating order status:', error);
+            showToast('Error updating order status', 'error');
+        }
     };
 
     // Product functions
-    const addProduct = (product) => {
+    const addProduct = async (product) => {
         const newProduct = {
-            ...product,
-            id: Date.now().toString(),
+            name: product.name,
+            price: product.price,
+            description: product.description,
+            image: product.image,
+            sizes: product.sizes,
         };
-        setProducts([...products, newProduct]);
-        showToast('Product added successfully');
+
+        try {
+            if (isSupabaseConnected) {
+                const { data, error } = await supabase
+                    .from('products')
+                    .insert([newProduct])
+                    .select()
+                    .single();
+                if (error) throw error;
+                setProducts([...products, data]);
+            } else {
+                // Fallback
+                const localProduct = { ...newProduct, id: Date.now().toString() };
+                setProducts([...products, localProduct]);
+            }
+            showToast('Product added successfully');
+        } catch (error) {
+            console.error('Error adding product:', error);
+            showToast('Error adding product', 'error');
+        }
     };
 
-    const deleteProduct = (productId) => {
-        setProducts(products.filter(p => p.id !== productId));
-        showToast('Product deleted');
+    const deleteProduct = async (productId) => {
+        try {
+            if (isSupabaseConnected) {
+                const { error } = await supabase
+                    .from('products')
+                    .delete()
+                    .eq('id', productId);
+                if (error) throw error;
+            }
+            setProducts(products.filter(p => p.id !== productId));
+            showToast('Product deleted');
+        } catch (error) {
+            console.error('Error deleting product:', error);
+            showToast('Error deleting product', 'error');
+        }
+    };
+
+    // Refresh data function for admin
+    const refreshData = async () => {
+        await Promise.all([fetchProducts(), fetchOrders()]);
     };
 
     return (
@@ -168,6 +309,8 @@ export function StoreProvider({ children }) {
                 cart,
                 orders,
                 toasts,
+                loading,
+                isSupabaseConnected,
                 showToast,
                 addToCart,
                 removeFromCart,
@@ -179,6 +322,7 @@ export function StoreProvider({ children }) {
                 updateOrderStatus,
                 addProduct,
                 deleteProduct,
+                refreshData,
             }}
         >
             {children}

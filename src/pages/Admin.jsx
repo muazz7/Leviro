@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Package, ShoppingBag, Settings, Check } from 'lucide-react';
+import { LogOut, Package, ShoppingBag, Settings, Check, RefreshCw, Cloud, CloudOff } from 'lucide-react';
+import { useStore } from '../context/StoreContext';
 import OrdersTable from '../components/admin/OrdersTable';
 import ProductForm from '../components/admin/ProductForm';
 import ProductList from '../components/admin/ProductList';
@@ -8,6 +9,8 @@ import ProductList from '../components/admin/ProductList';
 const DEFAULT_CREDENTIALS = { username: 'admin', password: '1234' };
 
 export default function Admin({ onLogout }) {
+    const { refreshData, isSupabaseConnected, loading } = useStore();
+
     // Load credentials from localStorage or use defaults
     const [credentials, setCredentials] = useState(() => {
         const saved = localStorage.getItem('leviro_admin_credentials');
@@ -17,6 +20,7 @@ export default function Admin({ onLogout }) {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [activeTab, setActiveTab] = useState('orders');
     const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [loginError, setLoginError] = useState('');
 
     // Settings form state
@@ -167,6 +171,12 @@ export default function Admin({ onLogout }) {
         );
     }
 
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await refreshData();
+        setIsRefreshing(false);
+    };
+
     // Dashboard
     return (
         <div className="min-h-screen bg-gray-50">
@@ -177,8 +187,29 @@ export default function Admin({ onLogout }) {
                         <div className="flex items-center gap-4">
                             <h1 className="text-xl font-bold text-black">LEVIRO</h1>
                             <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">Admin</span>
+                            {/* Connection Status */}
+                            {isSupabaseConnected ? (
+                                <span className="flex items-center gap-1 text-xs px-2 py-1 bg-green-50 text-green-600 rounded">
+                                    <Cloud className="w-3 h-3" />
+                                    Cloud
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-1 text-xs px-2 py-1 bg-yellow-50 text-yellow-600 rounded">
+                                    <CloudOff className="w-3 h-3" />
+                                    Local
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-4">
+                            {/* Refresh Button */}
+                            <button
+                                onClick={handleRefresh}
+                                disabled={isRefreshing}
+                                className="flex items-center gap-2 text-sm text-gray-500 hover:text-black transition-colors disabled:opacity-50"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                Refresh
+                            </button>
                             <a
                                 href="/"
                                 className="text-sm text-gray-500 hover:text-black transition-colors"
